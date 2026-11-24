@@ -21,8 +21,10 @@ DATA = Path(os.environ.get("TODO_DATA") or APP.with_name("data.json"))
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 ERROR_ALREADY_EXISTS = 183
 MAX_ROWS = 20
+DONE_KEEP = 500  # the done log keeps this many of the newest entries
 TICK_MS = 20_000
 ENTRY = "\0entry"  # marks where the text input sits in a rendered line
+GAP = "\t"  # splits a rendered line: what follows is right-aligned against the window edge
 
 # Checkbox colour by priority: P0, P1, ... anything past the end uses the last.
 PRI = ["#ff5555", "#ff9e3b", "#f1d263", "#7bd88f", "#5ccfe6", "#7aa2f7", "#bb9af7", "#8a8f98"]
@@ -153,8 +155,33 @@ def is_waiting(t):
     return (t["due"] or "") > date.today().isoformat()
 
 
-def clip(s, n):
-    return s if len(s) <= n else s[: max(n - 1, 0)] + "…"
+def clip(s, n, width=len):
+    """Cut s to fit n columns, ending in an ellipsis. width measures a string in columns."""
+    if width(s) <= n:
+        return s
+    lo, hi = 0, len(s)  # binary search for the longest prefix that fits
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        lo, hi = (mid, hi) if width(s[:mid] + "…") <= n else (lo, mid - 1)
+    return s[:lo] + "…"
+
+
+def archive(data, linger, force=False):
+    """Move todos finished over `linger` minutes ago to the done log. Returns True if data changed."""
+    cutoff = time.time() - linger * 60
+    todos, done = data["todos"], data["done"]
+    finished = [t for t in todos if t["done_at"] and (force or t["done_at"] <= cutoff)]
+    for t in finished:
+        done.append({"title": t["title"], "pri": t["pri"], "done_at": t["done_at"]})
+        if t["repeat"]:
+            t["due"], t["done_at"] = next_due(t["done_at"], t["repeat"]), None
+        else:
+            todos.remove(t)
+    if not finished and len(done) <= DONE_KEEP:
+        return False
+    done.sort(key=lambda x: x["done_at"], reverse=True)
+    del done[DONE_KEEP:]  # so neither the log nor the data file grows forever
+    return True
 
 
 def pri_tag(pri):
@@ -261,17 +288,7 @@ class App:
         return sorted(self.d["todos"], key=key)
 
     def sweep(self, force=False):
-        """Move todos that have been done long enough into the done list."""
-        cutoff = time.time() - self.s["linger"] * 60
-        finished = [t for t in self.d["todos"] if t["done_at"] and (force or t["done_at"] <= cutoff)]
-        for t in finished:
-            self.d["done"].append({"title": t["title"], "pri": t["pri"], "done_at": t["done_at"]})
-            if t["repeat"]:
-                t["due"], t["done_at"] = next_due(t["done_at"], t["repeat"]), None
-            else:
-                self.d["todos"].remove(t)
-        if finished:
-            self.d["done"].sort(key=lambda x: x["done_at"], reverse=True)
+        if archive(self.d, self.s["linger"], force):
             self.save()
 
     def toggle(self, t):
@@ -303,20 +320,27 @@ class App:
 
     # --- rendering ----------------------------------------------------------
 
+    def cols(self, s):
+        """Width of s in character cells. Emoji and CJK come from fallback fonts and aren't whole cells,
+        so lines are laid out by measuring, with a GAP tab stop lining up the right edge exactly."""
+        return self.font.measure(s) / self.cw
+
     def bar(self, left, right, label, tag=""):
-        w = self.s["width"]
-        label = clip(label, w - 5)
-        return [(f"{left}─ ", "dim"), (label, tag), (f" {'─' * (w - len(label) - 5)}{right}", "dim")]
+        label = clip(label, self.s["width"] - 5, self.cols)
+        fill = "─" * int(self.s["width"] - 5 - self.cols(label))
+        return [(f"{left}─ ", "dim"), (label, tag), (GAP, ""), (fill + right, "dim")]
 
     def boxed(self, segs, selected=False):
-        pad = self.s["width"] - 4 - sum(len(s) for s, _ in segs)
-        segs = [(" ", ""), *segs, (" " * pad, ""), (" ", "")]
+        """Frame a row in borders. Anything after a GAP sits right-aligned, a space in from the border."""
+        if any(s == GAP for s, _ in segs):
+            segs = [(" ", ""), *segs, (" ", "")]
+        else:
+            segs = [(" ", ""), *segs, (GAP, "")]
         if selected:
             segs = [(s, f"{tag} cursor".strip()) for s, tag in segs]
         return [("│", "dim"), *segs, ("│", "dim")]
 
     def todo_row(self, t):
-        inner = self.s["width"] - 4
         waiting = is_waiting(t)
         status = [f"~{t['repeat'][0]}"] if t["repeat"] else []
         if t["done_at"]:
@@ -328,17 +352,18 @@ class App:
         status = " ".join(status)
         label = pri_label(t["pri"])
         color = "dim" if waiting else pri_tag(t["pri"])
-        room = inner - len(label) - 5 - (len(status) + 1 if status else 0)
-        title = clip(t["title"], room)
-        return [("[x]" if t["done_at"] else "[ ]", color), (" ", ""), (label, color), (" ", ""),
-                (title, "struck" if t["done_at"] else "dim" if waiting else ""),
-                (" " * (inner - len(label) - 5 - len(title) - len(status)), ""), (status, "dim")]
+        room = self.s["width"] - 9 - len(label) - (self.cols(status) + 1 if status else 0)
+        title = clip(t["title"], room, self.cols)
+        row = [("[x]" if t["done_at"] else "[ ]", color), (" ", ""), (label, color), (" ", ""),
+               (title, "struck" if t["done_at"] else "dim" if waiting else "")]
+        return [*row, (GAP, ""), (status, "dim")] if status else row
 
     def log_row(self, x):
         stamp = datetime.fromtimestamp(x["done_at"]).strftime("%b %d %H:%M")
         label = pri_label(x["pri"])
-        room = self.s["width"] - 4 - len(stamp) - len(label) - 2
-        return [(stamp, "dim"), (" ", ""), (label, pri_tag(x["pri"])), (" ", ""), (clip(x["title"], room), "")]
+        room = self.s["width"] - 6 - self.cols(stamp) - len(label)
+        return [(stamp, "dim"), (" ", ""), (label, pri_tag(x["pri"])), (" ", ""),
+                (clip(x["title"], room, self.cols), "")]
 
     def setting_row(self, option):
         key, label, _ = option
@@ -348,7 +373,7 @@ class App:
         elif key == "linger":
             value = f"{value // 60}h" if value >= 60 else f"{value}m"
         value = f"< {value} >"
-        return [(label, ""), (" " * (self.s["width"] - 4 - len(label) - len(value)), ""), (value, "")]
+        return [(label, ""), (GAP, ""), (value, "")]
 
     def help_row(self, row):
         return [(f"{row[0]:<9}", "dim"), (clip(row[1], self.s["width"] - 13), "")]
@@ -424,9 +449,11 @@ class App:
         s = self.s
         bg, fg, dim, sel = THEMES[s["theme"]]
         self.font.configure(size=s["font_size"])
+        self.cw = self.font.measure("0")  # one cell; Tk sizes the text widget in these
         self.root.attributes("-topmost", s["on_top"])
         self.root.configure(bg=bg)
-        self.text.configure(bg=bg, fg=fg, width=s["width"])
+        self.text.configure(bg=bg, fg=fg, width=s["width"],  # GAP tabs right-align at the edge
+                            tabs=(self.cw * s["width"], "right"), tabstyle="tabular")
         self.text.tag_configure("dim", foreground=dim)
         self.text.tag_configure("struck", foreground=dim, overstrike=True)
         self.text.tag_configure("cursor", background=sel)  # not "sel": Tk reserves that tag

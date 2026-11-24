@@ -7,7 +7,8 @@ A small, keyboard-driven to-do list that sits on your Windows desktop, drawn lik
 - **One file, no dependencies.** Python's standard library only. Nothing to `pip install`.
 - **Priorities** `P0`–`P9`, colour-coded and sorted to the top.
 - **Repeating tasks** (daily, weekly, monthly) step aside until they're next due.
-- **Finished tasks linger** struck through with a countdown, then move to a done log.
+- **Finished tasks linger** struck through with a countdown, then move to a done log that keeps the newest 500.
+- **Any text**: emoji and CJK titles keep the box lined up.
 - **Themes** (dark, amber, green), adjustable font size and width, always-on-top, start at login.
 - **Plain JSON storage**, written atomically. A damaged file is set aside, never overwritten.
 
