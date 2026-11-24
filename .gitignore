@@ -1,0 +1,7 @@
+# Your to-do list: personal data, never committed
+data.json
+*.bad*.json
+*.tmp
+
+__pycache__/
+.ruff_cache/
