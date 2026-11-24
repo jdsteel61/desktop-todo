@@ -78,7 +78,7 @@ Turn off **start at login** in settings. That removes the `desktop-todo` entry u
 
 ```
 python -m unittest discover -s tests -v
-ruff check todo.pyw tests
+ruff check .
 ```
 
 The tests cover parsing, scheduling and loading the data file, and don't open a window.

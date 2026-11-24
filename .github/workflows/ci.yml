@@ -24,4 +24,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: pipx run ruff check todo.pyw tests
+      - run: pipx run ruff==0.15.6 check .
