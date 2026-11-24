@@ -22,7 +22,8 @@ A small, keyboard-driven to-do list that sits on your Windows desktop, drawn lik
 git clone https://github.com/jdsteel61/desktop-todo.git
 ```
 
-Or download the ZIP from GitHub and unzip it. Then double-click `todo.pyw`.
+Or download **Source code (zip)** from the [latest release](https://github.com/jdsteel61/desktop-todo/releases/latest)
+and unzip it. Then double-click `todo.pyw`.
 The `.pyw` extension runs it without a console window.
 
 To have it open when you sign in, press `s` and turn on **start at login**.
@@ -82,6 +83,7 @@ ruff check .
 ```
 
 The tests cover parsing, scheduling and loading the data file, and don't open a window.
+To propose a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

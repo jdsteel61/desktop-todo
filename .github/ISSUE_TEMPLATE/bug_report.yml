@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Press a and type ...
+        2. ...
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: The output of `python --version`
+      placeholder: Python 3.13.1
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message
+      description: >-
+        Any text from the footer or an error box. Please don't paste your whole data.json,
+        because it holds your personal tasks.
+      render: text
